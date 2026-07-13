@@ -108,7 +108,7 @@ import ChangeLog from '../changelog/connector-file-s3.md';
 | tmp_path                              | string  | 否    | /tmp/seatunnel                                        | 结果文件将首先写入临时路径，然后使用 `mv` 将临时目录提交到目标目录。需要一个 S3 目录。                                                                                    |
 | bucket                                | string  | 是    | -                                                     |                                                                                                                                     |
 | fs.s3a.endpoint                       | string  | 是    | -                                                     |                                                                                                                                     |
-| fs.s3a.aws.credentials.provider       | string  | 是    | com.amazonaws.auth.InstanceProfileCredentialsProvider | 认证 s3a 的方式。目前仅支持 `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` 和 `com.amazonaws.auth.InstanceProfileCredentialsProvider`。 |
+| fs.s3a.aws.credentials.provider       | string  | 是    | com.amazonaws.auth.InstanceProfileCredentialsProvider | S3A 凭据提供器（Hadoop `fs.s3a.aws.credentials.provider`）。SeaTunnel 已验证 `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` 和 `com.amazonaws.auth.InstanceProfileCredentialsProvider`。在容器环境中，也可以使用运行时 classpath 中可用的 AWS SDK v1 provider（例如 `com.amazonaws.auth.DefaultAWSCredentialsProviderChain`、`com.amazonaws.auth.ContainerCredentialsProvider`）。 |
 | access_key                            | string  | 否    | -                                                     | 仅当 fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider 时使用                                      |
 | secret_key                            | string  | 否    | -                                                     | 仅当 fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider 时使用                                      |
 | custom_filename                       | boolean | 否    | false                                                 | 是否需要自定义文件名                                                                                                                          |
@@ -157,6 +157,29 @@ hadoop_s3_properties {
       "fs.s3a.fast.upload.buffer" = "disk"
    }
 ```
+
+### fs.s3a.aws.credentials.provider [string]
+
+SeaTunnel 将 S3 认证委托给 Hadoop S3A，该参数会以 `fs.s3a.aws.credentials.provider` 的形式透传给 Hadoop。
+
+#### 容器环境（Kubernetes/ECS/EKS）
+
+推荐使用 AWS SDK v1 的默认凭据链，从运行环境获取短期凭据（task role、IRSA 等），避免在作业配置中硬编码 AK/SK。
+
+```
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+```
+
+如果运行在 ECS 且希望显式使用容器凭据，也可以使用：
+
+```
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.ContainerCredentialsProvider"
+```
+
+#### 常见排障
+
+- `Factory initialize failed` / `ClassNotFoundException`：说明凭据 provider 类在运行时找不到，请检查 Hadoop/AWS 相关 jar 是否加载，以及 provider 类名是否正确。
+- `403 AccessDenied`：检查 IAM role/policy 是否对 bucket/prefix 具备权限。
 
 ### custom_filename [boolean]
 
