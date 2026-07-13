@@ -109,7 +109,7 @@ If write to `csv`, `text` file type, All column will be string.
 | tmp_path                              | string  | no       | /tmp/seatunnel                                        | The result file will write to a tmp path first and then use `mv` to submit tmp dir to target dir. Need a S3 dir.                                                                |
 | bucket                                | string  | yes      | -                                                     |                                                                                                                                                                                 |
 | fs.s3a.endpoint                       | string  | yes      | -                                                     |                                                                                                                                                                                 |
-| fs.s3a.aws.credentials.provider       | string  | yes      | com.amazonaws.auth.InstanceProfileCredentialsProvider | The way to authenticate s3a. We only support `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` and `com.amazonaws.auth.InstanceProfileCredentialsProvider` now.           |
+| fs.s3a.aws.credentials.provider       | string  | yes      | com.amazonaws.auth.InstanceProfileCredentialsProvider | Credential provider for Hadoop S3A (`fs.s3a.aws.credentials.provider`). SeaTunnel is validated with `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` and `com.amazonaws.auth.InstanceProfileCredentialsProvider`. In container environments you can also use AWS SDK v1 providers available on the classpath (e.g. `com.amazonaws.auth.DefaultAWSCredentialsProviderChain`, `com.amazonaws.auth.ContainerCredentialsProvider`). |
 | access_key                            | string  | no       | -                                                     | Only used when fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider                                                                          |
 | secret_key                            | string  | no       | -                                                     | Only used when fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider                                                                          |
 | custom_filename                       | boolean | no       | false                                                 | Whether you need custom the filename                                                                                                                                            |
@@ -160,6 +160,29 @@ hadoop_s3_properties {
       "fs.s3a.fast.upload.buffer" = "disk"
    }
 ```
+
+### fs.s3a.aws.credentials.provider [string]
+
+SeaTunnel delegates S3 authentication to Hadoop S3A. This option is passed to Hadoop as `fs.s3a.aws.credentials.provider`.
+
+#### Container environments (Kubernetes/ECS/EKS)
+
+Recommended: use the AWS SDK v1 default credential chain so you can rely on the runtime to provide short-lived credentials (task role, IRSA, etc.), instead of hardcoding access keys in the job config.
+
+```
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+```
+
+If you are running on ECS and want to explicitly use container credentials, you can also use:
+
+```
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.ContainerCredentialsProvider"
+```
+
+#### Troubleshooting
+
+- `Factory initialize failed` / `ClassNotFoundException`: the credential provider class is not available on the runtime classpath. Verify Hadoop/AWS jars are loaded and the provider class name is correct.
+- `403 AccessDenied`: verify the IAM role/policy has permissions to the bucket and prefix.
 
 ### custom_filename [boolean]
 
