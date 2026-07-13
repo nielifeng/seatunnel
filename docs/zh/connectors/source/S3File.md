@@ -195,7 +195,7 @@ schema {
 | file_format_type                | string  | 是    | -                                                     | 文件类型，支持以下文件类型：`text` `csv` `parquet` `orc` `json` `excel` `xml` `binary` `markdown`                                                                                                                                                                                                                                   |
 | bucket                          | string  | 是    | -                                                     | s3文件系统的bucket地址，例如：`s3n://seatunnel-test`，如果您使用`s3a`协议，此参数应为`s3a://seatunnel-test`。                                                                                                                                                                                                                                   |
 | fs.s3a.endpoint                 | string  | 是    | -                                                     | fs s3a端点                                                                                                                                                                                                                                                                                                              |
-| fs.s3a.aws.credentials.provider | string  | 是    | com.amazonaws.auth.InstanceProfileCredentialsProvider | s3a的认证方式。我们目前只支持`org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider`和`com.amazonaws.auth.InstanceProfileCredentialsProvider`。有关凭据提供程序的更多信息，您可以查看[Hadoop AWS文档](https://hadoop.apache.org/docs/stable/hadoop-aws/tools/hadoop-aws/index.html#Simple_name.2Fsecret_credentials_with_SimpleAWSCredentialsProvider.2A) |
+| fs.s3a.aws.credentials.provider | string  | 是    | com.amazonaws.auth.InstanceProfileCredentialsProvider | S3A 凭据提供器（Hadoop `fs.s3a.aws.credentials.provider`）。SeaTunnel 已验证 `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` 和 `com.amazonaws.auth.InstanceProfileCredentialsProvider`。在容器环境中，也可以使用运行时 classpath 中可用的 AWS SDK v1 provider（例如 `com.amazonaws.auth.DefaultAWSCredentialsProviderChain`、`com.amazonaws.auth.ContainerCredentialsProvider`）。 |
 | read_columns                    | list    | 否    | -                                                     | 数据源的读取列列表，用户可以使用它来实现字段投影。支持列投影的文件类型如下所示：`text` `csv` `parquet` `orc` `json` `excel` `xml`。如果用户想在读取`text` `json` `csv`文件时使用此功能，必须配置"schema"选项。                                                                                                                                                                         |
 | access_key                      | string  | 否    | -                                                     | 仅在`fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider`时使用                                                                                                                                                                                                                        |
 | secret_key                      | string  | 否    | -                                                     | 仅在`fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider`时使用                                                                                                                                                                                                                        |
@@ -223,7 +223,35 @@ schema {
 | common-options                  |         | 否    | -                                                     | 数据源插件通用参数，请参考[数据源通用选项](../common-options/source-common-options.md)了解详情。                                                                                                                                                                                                                                                              |
 | quote_char                      | string  | 否    | "                                                     | 用于包裹 CSV 字段的单字符，可保证包含逗号、换行符或引号的字段被正确解析。                                                                                                                                                                                                                                                                               |
 | escape_char                     | string  | 否    | -                                                     | 用于在 CSV 字段内转义引号或其他特殊字符，使其不会结束字段。                                                                                                                                                                                                                                                                                      |
-| metalake_type                   | string  | 否    | gravitino                                            | Metalake 服务类型，目前支持 `gravitino`。                                                                                                                                                                                                                                                 |
+
+### fs.s3a.aws.credentials.provider [string]
+
+SeaTunnel 将 S3 认证委托给 Hadoop S3A，该参数会以 `fs.s3a.aws.credentials.provider` 的形式透传给 Hadoop。
+
+如果使用 SeaTunnel Zeta，请确保运行时 classpath 中已包含 Hadoop/AWS 相关 jar（可参考本文档的 Dependency 章节）。如果使用 Spark/Flink，请确保集群 classpath 中也包含对应 jar。
+
+#### 容器环境（Kubernetes/ECS/EKS）
+
+推荐使用 AWS SDK v1 的默认凭据链，从运行环境获取短期凭据（task role、IRSA 等），避免在作业配置中硬编码 AK/SK。
+
+```hocon
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+```
+
+如果运行在 ECS 且希望显式使用容器凭据，也可以使用：
+
+```hocon
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.ContainerCredentialsProvider"
+```
+
+#### 传递更多 S3A 参数
+
+需要透传其它 `fs.s3a.*` 参数时，可通过 `hadoop_s3_properties` 配置。
+
+#### 常见排障
+
+- `Factory initialize failed` / `ClassNotFoundException`：说明凭据 provider 类在运行时找不到，请检查 Hadoop/AWS 相关 jar 是否加载，以及 provider 类名是否正确。
+- `403 AccessDenied`：检查 IAM role/policy 是否对 bucket/prefix 具备权限。
 
 ### delimiter/field_delimiter [string]
 
@@ -358,24 +386,6 @@ markdown 解析器提取各种元素，包括标题、段落、列表、代码�
 - `child_ids`：子元素 ID 的逗号分隔列表
 
 注意：Markdown 格式仅支持读取，不支持写入。
-
-### schema [config]
-
-仅在文件格式类型为 text、json、excel、xml 或 csv（或其他无法从元数据中读取 schema 的格式）时需要配置。
-
-上游数据的 schema 信息。更多详情请参考 [Schema 特性](../../introduction/concepts/schema-feature.md)。
-
-#### schema_url [string]
-
-通过 restApi 获取元数据信息的 http url，例如：`http://localhost:8090/api/metalakes/laowang_test/catalogs/221-pgsql/schemas/ykw/tables/all_type`
-
-> 当使用 Gravitino 作为元数据源时，Gravitino 的列类型会自动转换为 SeaTunnel 数据类型。详细的类型映射信息请参考 [Gravitino 类型映射](../../introduction/concepts/gravitino-type-mapping.md)。
-
-### metalake_type [string]
-
-Metalake 服务类型，目前仅支持 `gravitino`。当使用 `schema_url` 从 Gravitino 获取元数据时，可以指定此参数（默认为 `gravitino`）。
-
-有关 Metalake 的更多信息，请参考 [Metalake](../../introduction/concepts/metalake.md)。
 
 ## 示例
 
