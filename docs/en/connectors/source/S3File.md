@@ -195,7 +195,7 @@ If you assign file type to `parquet` `orc`, schema option not required, connecto
 | file_format_type                | string  | yes      | -                                                     | File type, supported as the following file types: `text` `csv` `parquet` `orc` `json` `excel` `xml` `binary` `markdown`                                                                                                                                                                                                                                                                                    |
 | bucket                          | string  | yes      | -                                                     | The bucket address of s3 file system, for example: `s3n://seatunnel-test`, if you use `s3a` protocol, this parameter should be `s3a://seatunnel-test`.                                                                                                                                                                                                                                                     |
 | fs.s3a.endpoint                 | string  | yes      | -                                                     | fs s3a endpoint                                                                                                                                                                                                                                                                                                                                                                                            |
-| fs.s3a.aws.credentials.provider | string  | yes      | com.amazonaws.auth.InstanceProfileCredentialsProvider | The way to authenticate s3a. We only support `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` and `com.amazonaws.auth.InstanceProfileCredentialsProvider` now. More information about the credential provider you can see [Hadoop AWS Document](https://hadoop.apache.org/docs/stable/hadoop-aws/tools/hadoop-aws/index.html#Simple_name.2Fsecret_credentials_with_SimpleAWSCredentialsProvider.2A) |
+| fs.s3a.aws.credentials.provider | string  | yes      | com.amazonaws.auth.InstanceProfileCredentialsProvider | Credential provider for Hadoop S3A (`fs.s3a.aws.credentials.provider`). SeaTunnel is validated with `org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider` and `com.amazonaws.auth.InstanceProfileCredentialsProvider`. In container environments you can also use AWS SDK v1 providers available on the classpath (e.g. `com.amazonaws.auth.DefaultAWSCredentialsProviderChain`, `com.amazonaws.auth.ContainerCredentialsProvider`). |
 | read_columns                    | list    | no       | -                                                     | The read column list of the data source, user can use it to implement field projection. The file type supported column projection as the following shown: `text` `csv` `parquet` `orc` `json` `excel` `xml` . If the user wants to use this feature when reading `text` `json` `csv` files, the "schema" option must be configured.                                                                        |
 | access_key                      | string  | no       | -                                                     | Only used when `fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider `                                                                                                                                                                                                                                                                                                  |
 | secret_key                      | string  | no       | -                                                     | Only used when `fs.s3a.aws.credentials.provider = org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider `                                                                                                                                                                                                                                                                                                  |
@@ -224,7 +224,35 @@ If you assign file type to `parquet` `orc`, schema option not required, connecto
 | common-options                  |         | no       | -                                                     | Source plugin common parameters, please refer to [Source Common Options](../common-options/source-common-options.md) for details.                                                                                                                                                                                                                                                                          |
 | quote_char                      | string  | no       | "                                                     | A single character that encloses CSV fields, allowing fields with commas, line breaks, or quotes to be read correctly.                                                                                                                                                                                                                                                                                     |
 | escape_char                     | string  | no       | -                                                     | A single character that allows the quote or other special characters to appear inside a CSV field without ending the field.                                                                                                                                                                                                                                                                                |
-| metalake_type                   | string  | no       | gravitino                                            | The type of metalake service, currently supports `gravitino`.                                                                                                                                                                                                                                                                              |
+
+### fs.s3a.aws.credentials.provider [string]
+
+SeaTunnel delegates S3 authentication to Hadoop S3A. This option is passed to Hadoop as `fs.s3a.aws.credentials.provider`.
+
+If you use SeaTunnel Zeta, make sure the required Hadoop/AWS jars are present on the runtime classpath (see the Dependency section in this document). If you use Spark/Flink, make sure the cluster classpath includes the same jars.
+
+#### Container environments (Kubernetes/ECS/EKS)
+
+Recommended: use the AWS SDK v1 default credential chain so you can rely on the runtime to provide short-lived credentials (task role, IRSA, etc.), instead of hardcoding access keys in the job config.
+
+```hocon
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+```
+
+If you are running on ECS and want to explicitly use container credentials, you can also use:
+
+```hocon
+fs.s3a.aws.credentials.provider = "com.amazonaws.auth.ContainerCredentialsProvider"
+```
+
+#### Passing extra S3A options
+
+Use `hadoop_s3_properties` to pass additional `fs.s3a.*` options when needed.
+
+#### Troubleshooting
+
+- `Factory initialize failed` / `ClassNotFoundException`: the credential provider class is not available on the runtime classpath. Verify Hadoop/AWS jars are loaded and the provider class name is correct.
+- `403 AccessDenied`: verify the IAM role/policy has permissions to the bucket and prefix.
 
 ### file_format_type [string]
 
@@ -359,24 +387,6 @@ A single character that encloses CSV fields, allowing fields with commas, line b
 ### escape_char [string]
 
 A single character that allows the quote or other special characters to appear inside a CSV field without ending the field.
-
-### schema [config]
-
-#### fields [Config]
-
-The schema of upstream data. For more details, please refer to [Schema Feature](../../introduction/concepts/schema-feature.md).
-
-#### schema_url [string]
-
-Get the http url of metadata information through restApi, such as: `http://localhost:8090/api/metalakes/laowang_test/catalogs/221-pgsql/schemas/ykw/tables/all_type`
-
-> When using Gravitino as the metadata source, the column types from Gravitino will be automatically converted to SeaTunnel data types. For detailed type mapping information, please refer to [Gravitino Type Mapping](../../introduction/concepts/gravitino-type-mapping.md).
-
-### metalake_type [string]
-
-The type of metalake service, currently only supports `gravitino`. When using `schema_url` to obtain metadata from Gravitino, you can specify this parameter (default is `gravitino`).
-
-For more information about Metalake, please refer to [Metalake](../../introduction/concepts/metalake.md).
 
 ## Example
 
