@@ -856,12 +856,26 @@ jobs:
           cache: 'maven'
       - name: free disk space
         run: tools/github/free_disk_space.sh
-      - name: run connector-v2 integration test (part-1)
+      - name: resolve connector-v2 integration test modules (part-1)
+        id: resolve-it-modules-part-1
         run: |
           ./mvnw help:evaluate -Dexpression=project.modules -q -DforceStdout -pl :seatunnel-connector-v2-e2e >> /tmp/sub_module.txt
           sub_modules=`python tools/update_modules_check/update_modules_check.py sub /tmp/sub_module.txt`
           run_it_modules=`python tools/update_modules_check/update_modules_check.py sub_it_module "$sub_modules" 7 0`
-          ./mvnw -B -T 1 verify -DskipUT=true -DskipIT=false -D"license.skipAddThirdParty"=true -D"skip.ui"=true --no-snapshot-updates -pl $run_it_modules -am -Pci
+          echo "run_it_modules=$run_it_modules" >> $GITHUB_OUTPUT
+      # MEASUREMENT PROBE (do not merge): the upstream build (-am) and the IT run
+      # are split into two separately-timed steps so the job's step timings expose
+      # how much of the total is upstream compilation vs. the integration tests
+      # themselves. This decides whether a build-once/artifact-reuse approach is
+      # worth pursuing. The set of tested modules and skip flags are unchanged.
+      - name: build upstream reactor for part-1 (-am, no tests)
+        run: |
+          ./mvnw -B -T 1 install -DskipTests=true -DskipUT=true -DskipIT=true -D"license.skipAddThirdParty"=true -D"skip.ui"=true --no-snapshot-updates -pl ${{ steps.resolve-it-modules-part-1.outputs.run_it_modules }} -am -Pci
+        env:
+          MAVEN_OPTS: -Xmx4096m
+      - name: run connector-v2 integration test (part-1)
+        run: |
+          ./mvnw -B -T 1 verify -DskipUT=true -DskipIT=false -D"license.skipAddThirdParty"=true -D"skip.ui"=true --no-snapshot-updates -pl ${{ steps.resolve-it-modules-part-1.outputs.run_it_modules }} -Pci
         env:
           MAVEN_OPTS: -Xmx4096m
 
